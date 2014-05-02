@@ -1,0 +1,240 @@
+#!/usr/bin/env python
+
+#
+# Copyright (C) 2014 Noralf Tronnes
+#
+# MIT License
+#
+
+import os
+import sys
+import argparse
+import urllib
+import urllib2
+import urlparse
+import gzip
+import subprocess
+import re
+
+# used by archive file and unpacked archive
+DISK_USAGE_MB = 900
+
+wiki = "https://github.com/notro/rpi-source/wiki"
+
+parser = argparse.ArgumentParser(description='Raspberry Pi kernel source installer',
+                                  epilog="For more help see: %s" % wiki)
+parser.add_argument("-d", "--dest", help="Destination directory. Default is $HOME",
+                    default=os.environ.get('HOME'))
+parser.add_argument("--nomake", help="Don't run 'make modules_prepare'",
+                    action="store_true")
+if os.environ.get('REPO_URI'):
+    repo_uri = os.environ.get('REPO_URI')
+else:
+    repo_uri = "https://github.com/Hexxeh/rpi-firmware" 
+parser.add_argument("--uri", help="Github repository to use. Default is '%s'" % repo_uri,
+                    default=repo_uri)
+parser.add_argument("--delete", help="Delete downloaded archive",
+                    action="store_true")
+parser.add_argument("-s", "--dry-run", help="No action; perform a simulation of events that would occur but do not actually change the system.",
+                    action="store_true")
+parser.add_argument("--verbose", help="Verbose",
+                    action="store_true")
+parser.add_argument("-q", "--quiet", help="Quiet",
+                    action="store_true")
+parser.add_argument("--skip-gcc", help="Skip gcc version check",
+                    action="store_true")
+parser.add_argument("--skip-space", help="Skip disk space check",
+                    action="store_true")
+args = parser.parse_args()
+
+
+class Kernel:
+    pass
+
+def debug(str):
+    if args.verbose:
+        print(str)
+
+def info(str):
+    if not args.quiet:
+        print("\n *** %s" % str)
+
+def fail(str):
+    sys.stderr.write("ERROR:\n%s\n\n%s\n" % (str, wiki))
+    exit(1)
+
+def sh(cmd):
+    debug("%s" % cmd)
+    if not args.dry_run:
+        subprocess.check_call(cmd, shell=True)
+
+def sh_out(cmd):
+    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = process.communicate()
+    errcode = process.returncode
+    if errcode:
+        return None
+    return out
+
+def writef(f, str, mode='w'):
+    debug("writef(%s)" % f)
+    if not args.dry_run:
+        with open(f, mode) as f:
+            f.write(str)
+
+def download(url):
+    debug("download: %s" % url)
+    return urllib2.urlopen(url).read()
+
+def download_to(url, file):
+    debug("download_to: %s -> %s" % (url, file))
+    if not args.dry_run:
+        urllib.urlretrieve (url, file)
+
+def check_diskspace(dir):
+    df = sh_out("df %s" % dir)
+    nums = re.findall(r'\d+\w+\d+\w+\d+', df)
+    if not nums or len(nums) != 3:
+        info("Warning: unable to check available diskspace")
+    if (int(nums[2]) / 1024) < DISK_USAGE_MB:
+        fail("Not enough diskspace (%dMB) on %s\nSkip this check with --skip-space" % (DISK_USAGE_MB, dir))
+
+# see if gcc major.minor version matches the one used to build the running kernel
+def check_gcc():
+    cmd = 'gcc --version'
+    process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = process.communicate()
+    errcode = process.returncode
+    if errcode:
+        fail("gcc version check failed: '%s' returned %d" %(cmd, errcode))
+    gcc_ver = re.findall(r'\d\.\d\.\d$', out, re.MULTILINE)
+
+    with open('/proc/version', 'r') as f:
+        proc_version = f.read()
+    gcc_ver_kernel = re.findall(r'\d\.\d\.\d', proc_version)
+
+    if not gcc_ver or not gcc_ver_kernel:
+        fail("gcc version check failed: could not extract version numbers\nSkip this check with --skip-gcc")
+        return
+    a = gcc_ver[0].split('.')
+    b = gcc_ver_kernel[0].split('.')
+
+    if a[0] == b[0] and a[1] == b[1]:
+        info("gcc version check: OK")
+    else:
+        fail("gcc version check: mismatch between gcc (%s) and /proc/version (%s)\nSkip this check with --skip-gcc" % (gcc_ver[0], gcc_ver_kernel[0]))
+
+def rpi_update_method(uri):
+    kernel = Kernel()
+
+    info("rpi-update: %s" % uri)
+
+    with open("/boot/.firmware_revision") as f:
+        fw_rev = f.read().strip()
+    info("Firmware revision: %s" % fw_rev)
+
+    repo_short = urlparse.urlparse(uri).path
+
+    repo_api = "https://api.github.com/repos%s" % repo_short
+    repo_raw = "https://raw.githubusercontent.com%s" % repo_short
+
+    kernel.git_hash = download("%s/%s/git_hash" % (repo_raw, fw_rev)).strip()
+    kernel.symvers = "%s/%s/Module.symvers" % (repo_raw, fw_rev)
+
+    with gzip.open('/proc/config.gz', 'rb') as f:
+        kernel.config = f.read()
+
+    return kernel
+
+def debian_method(fn):
+    kernel = Kernel()
+    info("Using: %s" % fn)
+    with gzip.open(fn, 'rb') as f:
+        debian_changelog = f.read()
+    curr_entry = '\n'.join(debian_changelog.split('\n')[0:6])
+    debug(curr_entry)
+
+    fw_rev = re.findall(r'firmware as of ([0-9a-fA-F]+)', curr_entry, re.MULTILINE)
+    if not fw_rev:
+        fail("Could not get firmware revision")
+    fw_rev = fw_rev[0]
+    info("Firmware revision: %s" % fw_rev)
+
+    repo_raw = "https://raw.githubusercontent.com/raspberrypi/firmware"
+
+    kernel.git_hash = download("%s/%s/extra/git_hash" % (repo_raw, fw_rev)).strip()
+    kernel.symvers = "%s/%s/extra/Module.symvers" % (repo_raw, fw_rev)
+
+    with gzip.open('/proc/config.gz', 'rb') as f:
+        kernel.config = f.read()
+
+    return kernel
+
+if not os.path.isdir(args.dest):
+    fail("Destination directory missing: %s" % args.dest)
+
+if not args.skip_gcc:
+    check_gcc()
+
+debianlog = "/usr/share/doc/raspberrypi-bootloader/changelog.Debian.gz"
+if os.path.exists("/boot/.firmware_revision"):
+    kernel = rpi_update_method(args.uri)
+elif os.path.exists(debianlog):
+    kernel = debian_method(debianlog)
+else:
+    fail("Can't find a source for this kernel")
+
+info("Linux source commit: %s" % kernel.git_hash)
+
+linux_dir = os.path.join(args.dest, "linux-%s" % kernel.git_hash)
+if os.path.exists(linux_dir):
+    info("Kernel source already installed: %s\n" % linux_dir)
+    exit(1)
+
+if not args.skip_space:
+    check_diskspace(args.dest)
+
+linux_tar = os.path.join(args.dest, "linux-%s.tar.gz" % kernel.git_hash)
+if not os.path.exists(linux_tar):
+    info("Download kernel source")
+    sh("wget %s -O %s https://github.com/raspberrypi/linux/archive/%s.tar.gz" % (("-q" if args.quiet else ""), linux_tar, kernel.git_hash))
+else:
+    info("Download kernel source: Already downloaded %s" % linux_tar)
+
+info("Unpack kernel source")
+if args.quiet:
+    sh("cd %s && tar -xzf %s" % (args.dest, linux_tar))
+else:
+    sh("cd %s && tar --checkpoint=100 --checkpoint-action=dot -xzf %s" % (args.dest, linux_tar))
+
+info("set 'EXTRAVERSION = +' in Makefile")
+sh("sed -i 's/EXTRAVERSION =.*/EXTRAVERSION = +/' %s" % os.path.join(linux_dir, 'Makefile'))
+
+linux_symlink = os.path.join(args.dest, 'linux')
+info("Create symlink: %s" % linux_symlink)
+sh("rm -f %s" % linux_symlink)
+sh("ln -s %s %s" % (linux_dir, linux_symlink))
+
+info("Create /lib/modules/<ver>/{build,source} symlinks")
+sh("sudo rm -f /lib/modules/$(uname -r)/build /lib/modules/$(uname -r)/source")
+sh("sudo ln -sf %s /lib/modules/$(uname -r)/build" % linux_symlink)
+sh("sudo ln -sf %s /lib/modules/$(uname -r)/source" % linux_symlink)
+
+info(".config")
+writef(os.path.join(linux_dir, '.config'), kernel.config)
+
+info("Module.symvers")
+download_to(kernel.symvers, os.path.join(linux_dir, "Module.symvers"))
+
+if not args.nomake:
+    info("make modules_prepare")
+    sh("cd %s && make modules_prepare %s" % (linux_symlink, (" > /dev/null" if args.quiet else "")))
+
+if not os.path.exists('/usr/include/ncurses.h'):
+    info("ncurses-devel is NOT installed. Needed by 'make menuconfig'. On Debian: apt-get install ncurses-dev")
+
+if args.delete:
+    info("Delete downloaded archive")
+    sh("rm %s" % linux_tar)
+
+info("Help: %s" % wiki)
