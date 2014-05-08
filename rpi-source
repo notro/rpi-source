@@ -225,6 +225,7 @@ writef(os.path.join(linux_dir, '.config'), kernel.config)
 
 info("Module.symvers")
 download_to(kernel.symvers, os.path.join(linux_dir, "Module.symvers"))
+sh("cd %s && cp -a Module.symvers Module.symvers.backup" % linux_dir)
 
 if not args.nomake:
     info("make modules_prepare")
