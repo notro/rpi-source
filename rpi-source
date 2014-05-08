@@ -152,6 +152,7 @@ def update_tag():
 
 def do_update():
     info("Updating rpi-source")
+    sh("sudo rm -f /usr/bin/rpi-source")
     sh("sudo wget %s https://raw.githubusercontent.com/notro/rpi-source/master/rpi-source -O /usr/bin/rpi-source" % ("-q" if args.quiet else ""))
     sh("sudo chmod +x /usr/bin/rpi-source")
     update_tag()
