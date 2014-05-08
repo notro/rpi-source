@@ -15,11 +15,16 @@ import urlparse
 import gzip
 import subprocess
 import re
+import json
 
 # used by archive file and unpacked archive
 DISK_USAGE_MB = 900
 
 wiki = "https://github.com/notro/rpi-source/wiki"
+script_repo = "https://github.com/notro/rpi-source"
+
+update_tag_file = os.path.join(os.environ.get('HOME'), '.rpi-source')
+argv = sys.argv[:]
 
 parser = argparse.ArgumentParser(description='Raspberry Pi kernel source installer',
                                   epilog="For more help see: %s" % wiki)
@@ -45,6 +50,10 @@ parser.add_argument("--skip-gcc", help="Skip gcc version check",
                     action="store_true")
 parser.add_argument("--skip-space", help="Skip disk space check",
                     action="store_true")
+parser.add_argument("--skip-update", help="Skip checking for update to this script",
+                    action="store_true")
+parser.add_argument("--tag-update", help="Tell the update mechanism that this is the latest version of the script",
+                    action="store_true")
 args = parser.parse_args()
 
 
@@ -59,8 +68,12 @@ def info(str):
     if not args.quiet:
         print("\n *** %s" % str)
 
+def warn(str):
+    if not args.quiet:
+        print("\n !!! %s" % str)
+
 def fail(str):
-    sys.stderr.write("ERROR:\n%s\n\n%s\n" % (str, wiki))
+    sys.stderr.write("ERROR:\n%s\n\nHelp: %s\n" % (str, wiki))
     exit(1)
 
 def sh(cmd):
@@ -84,12 +97,67 @@ def writef(f, str, mode='w'):
 
 def download(url):
     debug("download: %s" % url)
-    return urllib2.urlopen(url).read()
+    try:
+        res = urllib2.urlopen(url).read()
+    except urllib2.HTTPError, e:
+        fail("Couldn't download %s, HTTPError: %s" % (url, e.code))
+    except urllib2.URLError, e:
+        fail("Couldn't download %s, URLError: %s" % (url, e.args))
+    return res
 
 def download_to(url, file):
     debug("download_to: %s -> %s" % (url, file))
     if not args.dry_run:
         urllib.urlretrieve (url, file)
+
+def update_get_head():
+    if update_get_head.ref:
+        return update_get_head.ref
+    repo_short = urlparse.urlparse(script_repo).path
+    repo_api = "https://api.github.com/repos%s/git/refs/heads/master" % repo_short
+    res = download(repo_api)
+    try:
+        j = json.loads(res)
+    except ValueError:
+        j = {}
+    if 'object' in j and 'sha' in j['object']:
+        update_get_head.ref = j['object']['sha']
+        return update_get_head.ref
+    else:
+        warn("Self update: Could not get ref of last commit")
+        debug("Github returned:\n%s" % res)
+        return None
+update_get_head.ref = None
+
+def is_update_needed():
+    debug("Check for update to rpi-source")
+    if not os.path.exists(update_tag_file):
+        return True
+    ref = update_get_head()
+    if not ref:
+        return False
+    with open(update_tag_file) as f:
+        tag_file_ref = f.read().strip()
+    if ref != tag_file_ref:
+        return True
+    else:
+        return False
+
+def update_tag():
+    ref = update_get_head()
+    if not ref:
+       exit(1)
+    info("Set update tag: %s" % ref)
+    writef(update_tag_file, ref)
+
+def do_update():
+    info("Updating rpi-source")
+    sh("sudo wget %s https://raw.githubusercontent.com/notro/rpi-source/master/rpi-source -O /usr/bin/rpi-source" % ("-q" if args.quiet else ""))
+    sh("sudo chmod +x /usr/bin/rpi-source")
+    update_tag()
+    info("Restarting rpi-source")
+    argv.insert(0, sys.executable)
+    os.execv(sys.executable, argv)
 
 def check_diskspace(dir):
     df = sh_out("df %s" % dir)
@@ -169,6 +237,15 @@ def debian_method(fn):
         kernel.config = f.read()
 
     return kernel
+
+##############################################################################
+
+if args.tag_update:
+    update_tag()
+    exit(0)
+
+if not args.skip_update and is_update_needed():
+    do_update()
 
 if not os.path.isdir(args.dest):
     fail("Destination directory missing: %s" % args.dest)
