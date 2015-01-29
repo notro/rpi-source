@@ -151,10 +151,10 @@ def update_tag():
     writef(update_tag_file, ref)
 
 def do_update():
+    # MOD: replace current script; do not assume script is located at /usr/bin/rpi-source; also keep ownership and permissions
+    script_name = argv[0]
     info("Updating rpi-source")
-    sh("sudo rm -f /usr/bin/rpi-source")
-    sh("sudo wget %s https://raw.githubusercontent.com/notro/rpi-source/master/rpi-source -O /usr/bin/rpi-source" % ("-q" if args.quiet else ""))
-    sh("sudo chmod +x /usr/bin/rpi-source")
+    sh("sudo wget %s https://raw.githubusercontent.com/notro/rpi-source/master/rpi-source -O %s" % ("-q" if args.quiet else "", script_name))
     update_tag()
     info("Restarting rpi-source")
     argv.insert(0, sys.executable)
@@ -240,6 +240,9 @@ def debian_method(fn):
     return kernel
 
 ##############################################################################
+
+# FIX usage of -d DEST with relative pathnames
+args.dest = os.path.abspath(args.dest) 
 
 if args.tag_update:
     update_tag()
