@@ -46,6 +46,8 @@ parser.add_argument("-v", "--verbose", help="Verbose",
                     action="store_true")
 parser.add_argument("-q", "--quiet", help="Quiet",
                     action="store_true")
+parser.add_argument("-g", "--default-config", help="Generate a default kernel configuration with 'make bcmrpi_defconfig'",
+                    action="store_true")
 parser.add_argument("--skip-gcc", help="Skip gcc version check",
                     action="store_true")
 parser.add_argument("--skip-space", help="Skip disk space check",
@@ -209,9 +211,10 @@ def rpi_update_method(uri):
 
     kernel.git_hash = download("%s/%s/git_hash" % (repo_raw, fw_rev)).strip()
     kernel.symvers = "%s/%s/Module.symvers" % (repo_raw, fw_rev)
-
-    with gzip.open('/proc/config.gz', 'rb') as f:
-        kernel.config = f.read()
+    
+    if not args.default_config:
+        with gzip.open('/proc/config.gz', 'rb') as f:
+            kernel.config = f.read()
 
     return kernel
 
@@ -234,8 +237,9 @@ def debian_method(fn):
     kernel.git_hash = download("%s/%s/extra/git_hash" % (repo_raw, fw_rev)).strip()
     kernel.symvers = "%s/%s/extra/Module.symvers" % (repo_raw, fw_rev)
 
-    with gzip.open('/proc/config.gz', 'rb') as f:
-        kernel.config = f.read()
+    if not args.default_config:
+        with gzip.open('/proc/config.gz', 'rb') as f:
+            kernel.config = f.read()
 
     return kernel
 
@@ -301,8 +305,12 @@ sh("sudo rm -f /lib/modules/$(uname -r)/build /lib/modules/$(uname -r)/source")
 sh("sudo ln -sf %s /lib/modules/$(uname -r)/build" % linux_symlink)
 sh("sudo ln -sf %s /lib/modules/$(uname -r)/source" % linux_symlink)
 
-info(".config")
-writef(os.path.join(linux_dir, '.config'), kernel.config)
+if args.default_config:
+    info(".config (generating default)")
+    sh("cd %s && make bcmrpi_defconfig" % (linux_symlink,))
+else:
+    info(".config")
+    writef(os.path.join(linux_dir, '.config'), kernel.config)
 
 info("Module.symvers")
 download_to(kernel.symvers, os.path.join(linux_dir, "Module.symvers"))
