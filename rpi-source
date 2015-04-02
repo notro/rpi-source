@@ -16,6 +16,7 @@ import gzip
 import subprocess
 import re
 import json
+import platform
 
 # used by archive file and unpacked archive
 DISK_USAGE_MB = 900
@@ -210,7 +211,10 @@ def rpi_update_method(uri):
     repo_raw = "https://raw.githubusercontent.com%s" % repo_short
 
     kernel.git_hash = download("%s/%s/git_hash" % (repo_raw, fw_rev)).strip()
-    kernel.symvers = "%s/%s/Module.symvers" % (repo_raw, fw_rev)
+    if board_type == 1:
+        kernel.symvers = "%s/%s/extra/Module.symvers" % (repo_raw, fw_rev)
+    else:
+        kernel.symvers = "%s/%s/extra/Module7.symvers" % (repo_raw, fw_rev)
     
     if not args.default_config:
         with gzip.open('/proc/config.gz', 'rb') as f:
@@ -223,19 +227,42 @@ def debian_method(fn):
     info("Using: %s" % fn)
     with gzip.open(fn, 'rb') as f:
         debian_changelog = f.read()
-    curr_entry = '\n'.join(debian_changelog.split('\n')[0:6])
-    debug(curr_entry)
 
-    fw_rev = re.findall(r'firmware as of ([0-9a-fA-F]+)', curr_entry, re.MULTILINE)
+    # Remove blank lines
+    changelog = os.linesep.join([s for s in debian_changelog.splitlines() if s])
+
+    # Find first firmware entry in log (latest entries are at the top)
+    fw_rev = re.search(r'firmware as of ([0-9a-fA-F]+)', changelog)
     if not fw_rev:
-        fail("Could not get firmware revision")
-    fw_rev = fw_rev[0]
-    info("Firmware revision: %s" % fw_rev)
+        fail("Could not identify latest firmware revision")
+    end = fw_rev.end()
+    start = fw_rev.start()
+
+    # Find following change author line
+    author = re.search(r' --(.+?)\n', changelog[end:] )
+    if not author:
+        fail("Could not identify latest revision's author")
+
+    fw_rev = fw_rev.group(1)
+
+    headers = re.findall(r'(raspberrypi-firmware .+?)\n', changelog[:start])
+    if not headers:
+        fail("Could not find start of change block in log file")
+
+    # use the last header before the "firmware as" line
+    header = headers[-1]
+
+    debug("Latest changes: %s" % header)
+    info("Latest firmware revision: %s" % fw_rev)
+    debug("Latest change made by %s" % author.group(1))
 
     repo_raw = "https://raw.githubusercontent.com/raspberrypi/firmware"
 
     kernel.git_hash = download("%s/%s/extra/git_hash" % (repo_raw, fw_rev)).strip()
-    kernel.symvers = "%s/%s/extra/Module.symvers" % (repo_raw, fw_rev)
+    if board_type == 1:
+        kernel.symvers = "%s/%s/extra/Module.symvers" % (repo_raw, fw_rev)
+    else:
+        kernel.symvers = "%s/%s/extra/Module7.symvers" % (repo_raw, fw_rev)
 
     if not args.default_config:
         with gzip.open('/proc/config.gz', 'rb') as f:
@@ -243,7 +270,19 @@ def debian_method(fn):
 
     return kernel
 
+
+def check_cpu():
+    cpuType = platform.machine()
+    if cpuType == "armv7l":
+        return 2
+    if cpuType == "armv6l":
+        return 1
+    fail("Unrecognised CPU %s" % cpuType)
+
+
 ##############################################################################
+
+board_type = check_cpu()
 
 # FIX usage of -d DEST with relative pathnames
 args.dest = os.path.abspath(args.dest) 
@@ -307,7 +346,10 @@ sh("sudo ln -sf %s /lib/modules/$(uname -r)/source" % linux_symlink)
 
 if args.default_config:
     info(".config (generating default)")
-    sh("cd %s && make bcmrpi_defconfig" % (linux_symlink,))
+    if board_type == 1:
+        sh("cd %s && make bcmrpi_defconfig" % (linux_symlink,))
+    else:
+        sh("cd %s && make bcm2709_defconfig" % (linux_symlink,))
 else:
     info(".config")
     writef(os.path.join(linux_dir, '.config'), kernel.config)
@@ -321,7 +363,7 @@ if not args.nomake:
     sh("cd %s && make modules_prepare %s" % (linux_symlink, (" > /dev/null" if args.quiet else "")))
 
 if not os.path.exists('/usr/include/ncurses.h'):
-    info("ncurses-devel is NOT installed. Needed by 'make menuconfig'. On Debian: apt-get install ncurses-dev")
+    info("ncurses-devel is NOT installed. Needed by 'make menuconfig'. On Raspbian sudo apt-get install libncurses5-dev")
 
 if args.delete:
     info("Delete downloaded archive")
