@@ -16,6 +16,7 @@ import gzip
 import subprocess
 import re
 import json
+import platform
 
 # used by archive file and unpacked archive
 DISK_USAGE_MB = 900
@@ -210,7 +211,10 @@ def rpi_update_method(uri):
     repo_raw = "https://raw.githubusercontent.com%s" % repo_short
 
     kernel.git_hash = download("%s/%s/git_hash" % (repo_raw, fw_rev)).strip()
-    kernel.symvers = "%s/%s/Module.symvers" % (repo_raw, fw_rev)
+    if board_type == 1:
+        kernel.symvers = "%s/%s/extra/Module.symvers" % (repo_raw, fw_rev)
+    else:
+        kernel.symvers = "%s/%s/extra/Module7.symvers" % (repo_raw, fw_rev)
     
     if not args.default_config:
         with gzip.open('/proc/config.gz', 'rb') as f:
@@ -235,7 +239,10 @@ def debian_method(fn):
     repo_raw = "https://raw.githubusercontent.com/raspberrypi/firmware"
 
     kernel.git_hash = download("%s/%s/extra/git_hash" % (repo_raw, fw_rev)).strip()
-    kernel.symvers = "%s/%s/extra/Module.symvers" % (repo_raw, fw_rev)
+    if board_type == 1:
+        kernel.symvers = "%s/%s/extra/Module.symvers" % (repo_raw, fw_rev)
+    else:
+        kernel.symvers = "%s/%s/extra/Module7.symvers" % (repo_raw, fw_rev)
 
     if not args.default_config:
         with gzip.open('/proc/config.gz', 'rb') as f:
@@ -243,7 +250,19 @@ def debian_method(fn):
 
     return kernel
 
+
+def check_cpu():
+    cpuType = platform.machine()
+    if cpuType == "armv7l":
+        return 2
+    if cpuType == "armv6l":
+        return 1
+    fail("Unrecognised CPU %s" % cpuType)
+
+
 ##############################################################################
+
+board_type = check_cpu()
 
 # FIX usage of -d DEST with relative pathnames
 args.dest = os.path.abspath(args.dest) 
@@ -307,7 +326,10 @@ sh("sudo ln -sf %s /lib/modules/$(uname -r)/source" % linux_symlink)
 
 if args.default_config:
     info(".config (generating default)")
-    sh("cd %s && make bcmrpi_defconfig" % (linux_symlink,))
+    if board_type == 1:
+        sh("cd %s && make bcmrpi_defconfig" % (linux_symlink,))
+    else:
+        sh("cd %s && make bcm2709_defconfig" % (linux_symlink,))
 else:
     info(".config")
     writef(os.path.join(linux_dir, '.config'), kernel.config)
