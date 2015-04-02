@@ -227,14 +227,34 @@ def debian_method(fn):
     info("Using: %s" % fn)
     with gzip.open(fn, 'rb') as f:
         debian_changelog = f.read()
-    curr_entry = '\n'.join(debian_changelog.split('\n')[0:6])
-    debug(curr_entry)
 
-    fw_rev = re.findall(r'firmware as of ([0-9a-fA-F]+)', curr_entry, re.MULTILINE)
+    # Remove blank lines
+    changelog = os.linesep.join([s for s in debian_changelog.splitlines() if s])
+
+    # Find first firmware entry in log (latest entries are at the top)
+    fw_rev = re.search(r'firmware as of ([0-9a-fA-F]+)', changelog)
     if not fw_rev:
-        fail("Could not get firmware revision")
-    fw_rev = fw_rev[0]
-    info("Firmware revision: %s" % fw_rev)
+        fail("Could not identify latest firmware revision")
+    end = fw_rev.end()
+    start = fw_rev.start()
+
+    # Find following change author line
+    author = re.search(r' --(.+?)\n', changelog[end:] )
+    if not author:
+        fail("Could not identify latest revision's author")
+
+    fw_rev = fw_rev.group(1)
+
+    headers = re.findall(r'(raspberrypi-firmware .+?)\n', changelog[:start])
+    if not headers:
+        fail("Could not find start of change block in log file")
+
+    # use the last header before the "firmware as" line
+    header = headers[-1]
+
+    debug("Latest changes: %s" % header)
+    info("Latest firmware revision: %s" % fw_rev)
+    debug("Latest change made by %s" % author.group(1))
 
     repo_raw = "https://raw.githubusercontent.com/raspberrypi/firmware"
 
