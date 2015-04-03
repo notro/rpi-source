@@ -212,9 +212,9 @@ def rpi_update_method(uri):
 
     kernel.git_hash = download("%s/%s/git_hash" % (repo_raw, fw_rev)).strip()
     if board_type == 1:
-        kernel.symvers = "%s/%s/extra/Module.symvers" % (repo_raw, fw_rev)
+        kernel.symvers = "%s/%s/Module.symvers" % (repo_raw, fw_rev)
     else:
-        kernel.symvers = "%s/%s/extra/Module7.symvers" % (repo_raw, fw_rev)
+        kernel.symvers = "%s/%s/Module7.symvers" % (repo_raw, fw_rev)
     
     if not args.default_config:
         with gzip.open('/proc/config.gz', 'rb') as f:
