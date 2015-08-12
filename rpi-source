@@ -36,7 +36,7 @@ parser.add_argument("--nomake", help="Don't run 'make modules_prepare'",
 if os.environ.get('REPO_URI'):
     repo_uri = os.environ.get('REPO_URI')
 else:
-    repo_uri = "https://github.com/Hexxeh/rpi-firmware" 
+    repo_uri = "https://github.com/Hexxeh/rpi-firmware"
 parser.add_argument("--uri", help="Github repository to use. Default is '%s'" % repo_uri,
                     default=repo_uri)
 parser.add_argument("--delete", help="Delete downloaded archive",
@@ -183,18 +183,18 @@ def check_gcc():
 
     with open('/proc/version', 'r') as f:
         proc_version = f.read()
-    gcc_ver_kernel = re.findall(r'\d\.\d\.\d', proc_version)
+    gcc_ver_kernel = re.search(r'gcc version (\d\.\d\.\d)', proc_version)
 
     if not gcc_ver or not gcc_ver_kernel:
         fail("gcc version check failed: could not extract version numbers\nSkip this check with --skip-gcc")
         return
     a = gcc_ver[0].split('.')
-    b = gcc_ver_kernel[0].split('.')
+    b = gcc_ver_kernel.group(1).split('.')
 
     if a[0] == b[0] and a[1] == b[1]:
         info("gcc version check: OK")
     else:
-        fail("gcc version check: mismatch between gcc (%s) and /proc/version (%s)\nSkip this check with --skip-gcc" % (gcc_ver[0], gcc_ver_kernel[0]))
+        fail("gcc version check: mismatch between gcc (%s) and /proc/version (%s)\nSkip this check with --skip-gcc" % (gcc_ver[0], gcc_ver_kernel.group(1)))
 
 def rpi_update_method(uri):
     kernel = Kernel()
@@ -215,7 +215,7 @@ def rpi_update_method(uri):
         kernel.symvers = "%s/%s/Module.symvers" % (repo_raw, fw_rev)
     else:
         kernel.symvers = "%s/%s/Module7.symvers" % (repo_raw, fw_rev)
-    
+
     if not args.default_config:
         with gzip.open('/proc/config.gz', 'rb') as f:
             kernel.config = f.read()
@@ -285,7 +285,7 @@ def check_cpu():
 board_type = check_cpu()
 
 # FIX usage of -d DEST with relative pathnames
-args.dest = os.path.abspath(args.dest) 
+args.dest = os.path.abspath(args.dest)
 
 if args.tag_update:
     update_tag()
