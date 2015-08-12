@@ -196,6 +196,16 @@ def check_gcc():
     else:
         fail("gcc version check: mismatch between gcc (%s) and /proc/version (%s)\nSkip this check with --skip-gcc" % (gcc_ver[0], gcc_ver_kernel.group(1)))
 
+def proc_config_gz():
+    if not os.path.exists('/proc/config.gz'):
+        sh("sudo modprobe configs 2> /dev/null")
+
+    if not os.path.exists('/proc/config.gz'):
+        return ''
+
+    with gzip.open('/proc/config.gz', 'rb') as f:
+        return f.read()
+
 def rpi_update_method(uri):
     kernel = Kernel()
 
@@ -217,8 +227,7 @@ def rpi_update_method(uri):
         kernel.symvers = "%s/%s/Module7.symvers" % (repo_raw, fw_rev)
 
     if not args.default_config:
-        with gzip.open('/proc/config.gz', 'rb') as f:
-            kernel.config = f.read()
+        kernel.config = proc_config_gz()
 
     return kernel
 
@@ -265,8 +274,7 @@ def debian_method(fn):
         kernel.symvers = "%s/%s/extra/Module7.symvers" % (repo_raw, fw_rev)
 
     if not args.default_config:
-        with gzip.open('/proc/config.gz', 'rb') as f:
-            kernel.config = f.read()
+        kernel.config = proc_config_gz()
 
     return kernel
 
@@ -344,7 +352,7 @@ sh("sudo rm -f /lib/modules/$(uname -r)/build /lib/modules/$(uname -r)/source")
 sh("sudo ln -sf %s /lib/modules/$(uname -r)/build" % linux_symlink)
 sh("sudo ln -sf %s /lib/modules/$(uname -r)/source" % linux_symlink)
 
-if args.default_config:
+if args.default_config or not kernel.config:
     info(".config (generating default)")
     if board_type == 1:
         sh("cd %s && make bcmrpi_defconfig" % (linux_symlink,))
