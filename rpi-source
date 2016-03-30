@@ -339,8 +339,10 @@ if args.quiet:
 else:
     sh("cd %s && tar --checkpoint=100 --checkpoint-action=dot -xzf %s" % (args.dest, linux_tar))
 
-info("set 'EXTRAVERSION = +' in Makefile")
-sh("sed -i 's/EXTRAVERSION =.*/EXTRAVERSION = +/' %s" % os.path.join(linux_dir, 'Makefile'))
+# This happens automatically in a git repo, but we use a tarball
+info("Add '+' to kernel release string")
+with open(os.path.join(linux_dir, '.scmversion'),"w") as f:
+    f.write("+")
 
 linux_symlink = os.path.join(args.dest, 'linux')
 info("Create symlink: %s" % linux_symlink)
