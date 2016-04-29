@@ -287,6 +287,9 @@ def check_cpu():
         return 1
     fail("Unrecognised CPU %s" % cpuType)
 
+def check_bc():
+    if not os.path.exists('/usr/bin/bc'):
+        fail("bc is NOT installed. Needed by 'make modules_prepare'. On Raspbian, run 'sudo apt-get install bc' to install it.")
 
 ##############################################################################
 
@@ -307,6 +310,8 @@ if not os.path.isdir(args.dest):
 
 if not args.skip_gcc:
     check_gcc()
+
+check_bc()
 
 debianlog = "/usr/share/doc/raspberrypi-bootloader/changelog.Debian.gz"
 if os.path.exists("/boot/.firmware_revision"):
