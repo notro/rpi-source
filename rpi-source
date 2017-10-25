@@ -165,7 +165,7 @@ def do_update():
 
 def check_diskspace(dir):
     df = sh_out("df %s" % dir)
-    nums = re.findall(r'\d+\w+\d+\w+\d+', df)
+    nums = re.findall(r'(?<=\s)\d+(?=\s+)', df)
     if not nums or len(nums) != 3:
         info("Warning: unable to check available diskspace")
     if (int(nums[2]) / 1024) < DISK_USAGE_MB:
