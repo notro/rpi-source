@@ -346,8 +346,9 @@ else:
 
 # This happens automatically in a git repo, but we use a tarball
 info("Add '+' to kernel release string")
-with open(os.path.join(linux_dir, '.scmversion'),"w") as f:
-    f.write("+")
+if not args.dry_run:
+    with open(os.path.join(linux_dir, '.scmversion'),"w") as f:
+        f.write("+")
 
 linux_symlink = os.path.join(args.dest, 'linux')
 info("Create symlink: %s" % linux_symlink)
