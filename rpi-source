@@ -49,8 +49,7 @@ parser.add_argument("-q", "--quiet", help="Quiet",
                     action="store_true")
 parser.add_argument("-g", "--default-config", help="Generate a default kernel configuration with 'make bcmrpi_defconfig'",
                     action="store_true")
-parser.add_argument("--skip-gcc", help="Skip gcc version check",
-                    action="store_true")
+parser.add_argument("--skip-gcc", help=argparse.SUPPRESS, action="store_true")  # Deprecated
 parser.add_argument("--skip-space", help="Skip disk space check",
                     action="store_true")
 parser.add_argument("--skip-update", help="Skip checking for update to this script",
@@ -178,7 +177,7 @@ def check_gcc():
     out, err = process.communicate()
     errcode = process.returncode
     if errcode:
-        fail("gcc version check failed: '%s' returned %d" %(cmd, errcode))
+        debug("gcc version check failed: '%s' returned %d" %(cmd, errcode))
     gcc_ver = out.strip()
 
     with open('/proc/version', 'r') as f:
@@ -186,15 +185,15 @@ def check_gcc():
     gcc_ver_kernel = re.search(r'gcc version (\d\.\d\.\d)', proc_version)
 
     if not gcc_ver or not gcc_ver_kernel:
-        fail("gcc version check failed: could not extract version numbers\nSkip this check with --skip-gcc")
+        debug("gcc version check failed: could not extract version numbers")
         return
     a = gcc_ver.split('.')
     b = gcc_ver_kernel.group(1).split('.')
 
     if a[0] == b[0] and a[1] == b[1]:
-        info("gcc version check: OK")
+        debug("gcc version check: OK")
     else:
-        fail("gcc version check: mismatch between gcc (%s) and /proc/version (%s)\nSkip this check with --skip-gcc" % (gcc_ver[0], gcc_ver_kernel.group(1)))
+        debug("gcc version check: mismatch between installed gcc (%s) and /proc/version (%s)" % (gcc_ver[0], gcc_ver_kernel.group(1)))
 
 def proc_config_gz():
     if not os.path.exists('/proc/config.gz'):
