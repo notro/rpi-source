@@ -336,7 +336,7 @@ sh("rm -f %s" % linux_symlink)
 sh("ln -s %s %s" % (linux_dir, linux_symlink))
 
 info("Create /lib/modules/<ver>/{build,source} symlinks")
-sh("sudo rm -f /lib/modules/$(uname -r)/build /lib/modules/$(uname -r)/source")
+sh("sudo rm -rf /lib/modules/$(uname -r)/build /lib/modules/$(uname -r)/source")
 sh("sudo ln -sf %s /lib/modules/$(uname -r)/build" % linux_symlink)
 sh("sudo ln -sf %s /lib/modules/$(uname -r)/source" % linux_symlink)
 
