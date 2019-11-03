@@ -6,7 +6,9 @@
 # MIT License
 #
 
+import io
 import os
+import struct
 import sys
 import argparse
 import urllib
@@ -20,6 +22,9 @@ import platform
 
 # used by archive file and unpacked archive
 DISK_USAGE_MB = 900
+
+PROCESSOR_TYPES = range(0, 4)
+PROCESSOR_TYPES_NAMES = ['BCM2835', 'BCM2836', 'BCM2837', 'BCM2711']
 
 wiki = "https://github.com/notro/rpi-source/wiki"
 script_repo = "https://github.com/notro/rpi-source"
@@ -49,6 +54,7 @@ parser.add_argument("-q", "--quiet", help="Quiet",
                     action="store_true")
 parser.add_argument("-g", "--default-config", help="Generate a default kernel configuration with 'make bcmrpi_defconfig'",
                     action="store_true")
+parser.add_argument("--processor", type=int, choices=PROCESSOR_TYPES, help="Override Processor type")
 parser.add_argument("--skip-gcc", help=argparse.SUPPRESS, action="store_true")  # Deprecated
 parser.add_argument("--skip-space", help="Skip disk space check",
                     action="store_true")
@@ -205,6 +211,18 @@ def proc_config_gz():
     with gzip.open('/proc/config.gz', 'rb') as f:
         return f.read()
 
+
+def processor_type_suffix():
+    if processor_type == 0:
+        return ''
+    elif processor_type == 1 or processor_type == 2:
+        return '7'
+    elif processor_type == 3:
+        return '7l'
+    else:
+        fail("Unsupported processor_type %d" % processor_type)
+
+
 def rpi_update_method(uri):
     kernel = Kernel()
 
@@ -220,10 +238,7 @@ def rpi_update_method(uri):
     repo_raw = "https://raw.githubusercontent.com%s" % repo_short
 
     kernel.git_hash = download("%s/%s/git_hash" % (repo_raw, fw_rev)).strip()
-    if board_type == 1:
-        kernel.symvers = "%s/%s/Module.symvers" % (repo_raw, fw_rev)
-    else:
-        kernel.symvers = "%s/%s/Module7.symvers" % (repo_raw, fw_rev)
+    kernel.symvers = "%s/%s/Module%s.symvers" % (repo_raw, fw_rev, processor_type_suffix())
 
     if not args.default_config:
         kernel.config = proc_config_gz()
@@ -248,10 +263,7 @@ def debian_method(fn):
     repo_raw = "https://raw.githubusercontent.com/raspberrypi/firmware"
 
     kernel.git_hash = download("%s/%s/extra/git_hash" % (repo_raw, fw_rev)).strip()
-    if board_type == 1:
-        kernel.symvers = "%s/%s/extra/Module.symvers" % (repo_raw, fw_rev)
-    else:
-        kernel.symvers = "%s/%s/extra/Module7.symvers" % (repo_raw, fw_rev)
+    kernel.symvers = "%s/%s/extra/Module%s.symvers" % (repo_raw, fw_rev, processor_type_suffix())
 
     if not args.default_config:
         kernel.config = proc_config_gz()
@@ -259,13 +271,48 @@ def debian_method(fn):
     return kernel
 
 
-def check_cpu():
-    cpuType = platform.machine()
-    if cpuType == "armv7l":
-        return 2
-    if cpuType == "armv6l":
-        return 1
-    fail("Unrecognised CPU %s" % cpuType)
+# Taken from: https://github.com/gpiozero/gpiozero/blob/master/gpiozero/pins/local.py
+# Copyright (c) 2016-2019 Dave Jones <dave@waveform.org.uk>
+# Copyright (c) 2018 Martchus <martchus@gmx.net>
+#
+def get_revision():
+    revision = None
+    try:
+        with io.open('/proc/device-tree/system/linux,revision', 'rb') as f:
+            revision = hex(struct.unpack('>L', f.read(4))[0])[2:]
+    except IOError as e:
+        if e.errno != errno.ENOENT:
+            raise e
+        with io.open('/proc/cpuinfo', 'r') as f:
+            for line in f:
+                if line.startswith('Revision'):
+                    revision = line.split(':')[1].strip().lower()
+    if revision is None:
+        fail("Unable to find board revision (use --processor argument)")
+    try:
+        return int(revision, base=16)
+    except:
+        fail("Unrecognized revision %r (use --processor argument)" % revision)
+
+
+def get_processor_type():
+    if args.processor is not None:
+        return args.processor
+
+    # The old boards don't have the detailed revision, so to keep things simple:
+    if platform.machine() == "armv6l":
+        return 0
+
+    revision = get_revision()
+    if not (revision & 0x800000):
+        fail("Unexpected revision 0x%x (use --processor argument)" % revision)
+
+    processor = (revision & 0xf000) >> 12
+    if processor not in PROCESSOR_TYPES:
+        fail("Unexpected processor %d (use --processor argument)" % processor)
+
+    return processor
+
 
 def check_bc():
     if not os.path.exists('/usr/bin/bc'):
@@ -273,7 +320,8 @@ def check_bc():
 
 ##############################################################################
 
-board_type = check_cpu()
+processor_type = get_processor_type()
+info("SoC: %s" % PROCESSOR_TYPES_NAMES[processor_type])
 
 # FIX usage of -d DEST with relative pathnames
 args.dest = os.path.abspath(args.dest)
@@ -342,10 +390,14 @@ sh("sudo ln -sf %s /lib/modules/$(uname -r)/source" % linux_symlink)
 
 if args.default_config or not kernel.config:
     info(".config (generating default)")
-    if board_type == 1:
+    if processor_type == 0:
         sh("cd %s && make bcmrpi_defconfig" % (linux_symlink,))
-    else:
+    elif processor_type == 1 or processor_type == 2:
         sh("cd %s && make bcm2709_defconfig" % (linux_symlink,))
+    elif processor_type == 3:
+        sh("cd %s && make bcm2711_defconfig" % (linux_symlink,))
+    else:
+        fail("Unsupported processor_type %d" % processor_type)
 else:
     info(".config")
     writef(os.path.join(linux_dir, '.config'), kernel.config)
