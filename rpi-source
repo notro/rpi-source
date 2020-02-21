@@ -19,6 +19,7 @@ import subprocess
 import re
 import json
 import platform
+import errno
 
 # used by archive file and unpacked archive
 DISK_USAGE_MB = 900
