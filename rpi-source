@@ -197,7 +197,7 @@ def check_gcc():
     a = gcc_ver.split('.')
     b = gcc_ver_kernel.group(1).split('.')
 
-    if a[0] == b[0] and a[1] == b[1]:
+    if a[:2] == b[:2]:
         debug("gcc version check: OK")
     else:
         debug("gcc version check: mismatch between installed gcc (%s) and /proc/version (%s)" % (gcc_ver[0], gcc_ver_kernel.group(1)))
