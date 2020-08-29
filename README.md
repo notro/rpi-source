@@ -3,4 +3,4 @@ rpi-source
 
 Raspberry Pi kernel source installer
 
-See [wiki](https://github.com/notro/rpi-source/wiki)
+rpi-source development has moved to https://github.com/RPi-Distro/rpi-source
